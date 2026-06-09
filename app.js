@@ -1,20 +1,58 @@
+// --- KONFIGURASI DATABASE (GOOGLE SHEETS) ---
+// GANTI STRING DI BAWAH DENGAN URL WEB APP DARI GOOGLE APPS SCRIPT ANDA!
+const SCRIPT_URL = 'PASTE_URL_APPS_SCRIPT_ANDA_DISINI'; 
+
 // --- DATA STATE (LOKAL) ---
-let inventoryData = [
-    { id: 1, brand: 'Apple', model: 'iPhone 15 Pro Max', color: 'Natural Titanium', price: 24999000, imei: '358910001000001' },
-    { id: 2, brand: 'Apple', model: 'iPhone 15 Pro Max', color: 'Natural Titanium', price: 24999000, imei: '358910001000002' },
-    { id: 3, brand: 'Samsung', model: 'Galaxy S24 Ultra', color: 'Titanium Black', price: 21999000, imei: '358920002000001' }
-];
-
-let salesData = [
-    { id: 101, brand: 'Apple', model: 'iPhone 15 Pro Max', color: 'Natural Titanium', basePrice: 24999000, price: 25500000, imei: '358910001000000', freelancer: 'Budi', customer: 'Andi', phone: '08123456789', payment: 'Transfer', date: new Date().toISOString() }
-];
-
+let inventoryData = [];
+let salesData = [];
 let activeTab = 'dashboard';
 let isInventoryFormOpen = false;
 
+// --- INITIALIZE & FETCH DATA ---
+async function fetchInitialData() {
+    if(!SCRIPT_URL || SCRIPT_URL === 'PASTE_URL_APPS_SCRIPT_ANDA_DISINI') {
+        showNotification('URL Database belum diatur!', true);
+        return;
+    }
+
+    showNotification('Sedang memuat data dari database...');
+    
+    try {
+        const response = await fetch(`${SCRIPT_URL}?action=getData`);
+        const data = await response.json();
+        
+        inventoryData = data.inventory || [];
+        salesData = data.sales || [];
+        
+        updateAllViews();
+        showNotification('Data berhasil dimuat!');
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        showNotification('Gagal memuat data dari database. Periksa koneksi.', true);
+    }
+}
+
+// FUNGSI KOMUNIKASI KE GOOGLE SHEETS (BACKGROUND)
+async function sendDataToSheet(action, payload) {
+    try {
+        await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: action,
+                data: payload
+            })
+            // Tidak pakai header Content-Type agar tidak kena blokir CORS preflight di GAS
+        });
+        console.log(`Berhasil sinkronisasi: ${action}`);
+    } catch (error) {
+        console.error("Gagal sinkronisasi ke sheet:", error);
+        showNotification('Gagal sinkronisasi ke cloud, tapi data tersimpan di perangkat.', true);
+    }
+}
+
 // --- UTILITIES ---
 function formatRupiah(number) {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(Number(number));
 }
 
 function showNotification(message, isError = false) {
@@ -76,7 +114,7 @@ function updateDashboard() {
 
     const uniqueModels = new Set(inventoryData.map(i => `${i.brand}-${i.model}`));
     const totalStock = inventoryData.length;
-    const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.price, 0);
+    const totalRevenue = filteredSales.reduce((sum, sale) => sum + Number(sale.price), 0);
 
     document.getElementById('label-terjual').innerText = filterMonth ? `HP Terjual (${filterMonth})` : 'HP Terjual (Total)';
     document.getElementById('label-pendapatan').innerText = filterMonth ? `Pendapatan (${filterMonth})` : 'Total Pendapatan';
@@ -90,6 +128,7 @@ function updateDashboard() {
     if (filteredSales.length === 0) {
         tbody.innerHTML = `<tr><td colSpan="5" class="p-8 text-center text-slate-400">Tidak ada data penjualan pada bulan ini.</td></tr>`;
     } else {
+        // Karena data dari sheet lama ada di atas, kita reverse agar yang baru di atas
         const recent = [...filteredSales].reverse().slice(0, 5); 
         tbody.innerHTML = recent.map(sale => `
             <tr class="border-b border-slate-50 hover:bg-slate-50/50">
@@ -153,46 +192,35 @@ function handleSaveInventory(e) {
     }
 
     if (id) {
-        const index = inventoryData.findIndex(i => i.id == id);
-        if (index > -1) {
-            inventoryData[index] = { ...inventoryData[index], brand, model, color, price, imei: imeiList[0] };
-            
-            for (let i = 1; i < imeiList.length; i++) {
-                inventoryData.push({ id: Date.now() + i, brand, model, color, price, imei: imeiList[i] });
-            }
-            showNotification('Data produk berhasil diperbarui.');
-        }
+        // Fitur EDIT agak kompleks jika digabung dengan sheet tanpa ID unik row,
+        // di versi ini kita nonaktifkan edit sementara atau handle dengan hapus & tambah baru.
+        showNotification('Fitur Edit sedang disesuaikan dengan database. Hapus dan buat baru untuk saat ini.', true);
+        return;
     } else {
+        // Tembak banyak IMEI
+        const newItems = [];
         imeiList.forEach((imeiStr, i) => {
-            inventoryData.push({ id: Date.now() + i, brand, model, color, price, imei: imeiStr });
+            const newItem = { id: Date.now() + i, brand, model, color, price, imei: imeiStr };
+            inventoryData.push(newItem);
+            newItems.push(newItem);
         });
-        showNotification(`${imeiList.length} unit IMEI berhasil ditambahkan terpisah.`);
+        
+        // Simpan ke Google Sheet
+        sendDataToSheet('addInventory', newItems);
+        showNotification(`${imeiList.length} unit IMEI berhasil ditambahkan.`);
     }
 
     toggleInventoryForm(true);
     updateAllViews();
 }
 
-function editInventory(id) {
-    const item = inventoryData.find(i => i.id == id);
-    if(!item) return;
-    
-    document.getElementById('invId').value = item.id;
-    document.getElementById('invBrand').value = item.brand;
-    document.getElementById('invModel').value = item.model;
-    document.getElementById('invColor').value = item.color || '';
-    document.getElementById('invPrice').value = item.price;
-    document.getElementById('invImeis').value = item.imei;
-    
-    document.getElementById('inventory-form-title').innerText = 'Edit Data Produk';
-    document.getElementById('btn-save-inv').innerText = 'Simpan Perubahan';
-    
-    if(!isInventoryFormOpen) toggleInventoryForm();
-}
-
 function deleteInventory(id) {
     if(confirm('Yakin ingin menghapus unit fisik HP dengan IMEI ini?')) {
         inventoryData = inventoryData.filter(i => i.id != id);
+        
+        // Hapus dari Google Sheet
+        sendDataToSheet('deleteInventory', { id: id });
+        
         showNotification('Data barang berhasil dihapus.');
         updateAllViews();
     }
@@ -201,11 +229,12 @@ function deleteInventory(id) {
 function updateInventoryTable() {
     const tbody = document.getElementById('inventory-table-body');
     if (inventoryData.length === 0) {
-        tbody.innerHTML = `<tr><td colSpan="4" class="p-8 text-center text-slate-400">Stok kosong.</td></tr>`;
+        tbody.innerHTML = `<tr><td colSpan="4" class="p-8 text-center text-slate-400">Stok kosong atau belum dimuat.</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = inventoryData.map(item => `
+    // Reverse agar data terbaru di atas
+    tbody.innerHTML = [...inventoryData].reverse().map(item => `
         <tr class="border-b border-slate-50 hover:bg-slate-50/50">
             <td class="p-4">
                 <span class="font-bold block text-slate-800">${item.model}</span>
@@ -218,7 +247,7 @@ function updateInventoryTable() {
                 </span>
             </td>
             <td class="p-4 text-right align-middle whitespace-nowrap">
-                <button onclick="editInventory(${item.id})" class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg inline-flex mr-1" title="Edit Unit"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                <!-- Tombol Edit dimatikan sementara karena logika Sheet -->
                 <button onclick="deleteInventory(${item.id})" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg inline-flex" title="Hapus Unit"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </td>
         </tr>
@@ -349,9 +378,16 @@ function handleProcessSale(e) {
         customer: customer, phone: phone, payment: payment,
         imei: item.imei, date: new Date().toISOString()
     };
+    
+    // 1. Tambah data ke lokal memory
     salesData.push(newSale);
-
+    // 2. Hapus stok dari memori lokal
     inventoryData.splice(itemIndex, 1);
+
+    // 3. Simpan Penjualan ke Google Sheet
+    sendDataToSheet('addSale', newSale);
+    // 4. Hapus Stok dari Google Sheet
+    sendDataToSheet('deleteInventory', { id: item.id });
 
     document.getElementById('searchImeiInput').value = '';
     document.getElementById('salesModel').value = '';
@@ -361,7 +397,7 @@ function handleProcessSale(e) {
     document.getElementById('chkUnit').checked = false;
     handleModelChange(); 
 
-    showNotification('Penjualan diproses & mencetak Faktur...');
+    showNotification('Penjualan tersimpan & mencetak Faktur...');
     updateAllViews();
     
     doPrintInvoice(newSale.id);
@@ -381,17 +417,17 @@ function updateSalesHistory() {
     const tbody = document.getElementById('sales-table-body');
     
     if (filteredSales.length === 0) {
-        tbody.innerHTML = `<tr><td colSpan="5" class="p-12 text-center text-slate-400">Belum ada riwayat penjualan pada bulan ini.</td></tr>`;
+        tbody.innerHTML = `<tr><td colSpan="5" class="p-12 text-center text-slate-400">Belum ada riwayat penjualan.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = [...filteredSales].reverse().map(sale => {
-        const isMarkup = sale.price > sale.basePrice;
-        const isDiscount = sale.price < sale.basePrice;
+        const isMarkup = Number(sale.price) > Number(sale.basePrice);
+        const isDiscount = Number(sale.price) < Number(sale.basePrice);
         let marginHtml = '';
         if(isMarkup || isDiscount) {
             marginHtml = `<div class="text-[10px] font-medium mt-1 ${isMarkup ? 'text-green-500' : 'text-rose-500'}">
-                ${isMarkup ? '+' : ''}${formatRupiah(sale.price - sale.basePrice)} margin
+                ${isMarkup ? '+' : ''}${formatRupiah(Number(sale.price) - Number(sale.basePrice))} margin
             </div>`;
         }
 
@@ -429,7 +465,7 @@ function doPrintInvoice(saleId) {
     document.getElementById('print-phone').innerText = sale.phone || '-';
     document.getElementById('print-date').innerText = new Date(sale.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
     
-    const nominal = sale.price.toLocaleString('id-ID');
+    const nominal = Number(sale.price).toLocaleString('id-ID');
 
     document.getElementById('print-item-desc').innerHTML = `${sale.brand} ${sale.model} ${sale.color ? `<br><span class="text-xs font-normal text-slate-700">Warna: ${sale.color}</span>` : ''}`;
     document.getElementById('print-imei').innerText = sale.imei;
@@ -463,5 +499,7 @@ function updateAllViews() {
 document.addEventListener('DOMContentLoaded', () => {
     lucide.createIcons();
     initFilters(); 
-    updateAllViews();
+    
+    // FETCH DATA DARI GOOGLE SHEETS SAAT HALAMAN DIBUKA
+    fetchInitialData();
 });
