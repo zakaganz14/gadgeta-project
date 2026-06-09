@@ -476,6 +476,12 @@
         let isInventoryFormOpen = false;
         let isNetworkBusy = false;
 
+        // FUNGSI PENYIMPANAN LOKAL (LOCALSTORAGE)
+        function saveLocalData() {
+            localStorage.setItem('gadgeta_inventory', JSON.stringify(inventoryData));
+            localStorage.setItem('gadgeta_sales', JSON.stringify(salesData));
+        }
+
         // FETCH TIMEOUT UNTUK HP
         const fetchWithTimeout = async (url, options = {}, timeout = 15000) => {
             const controller = new AbortController();
@@ -541,12 +547,16 @@
 
         // DATABASE CONNECTION
         async function fetchInitialData() {
+            // Coba ambil data dari LocalStorage terlebih dahulu (Mode Offline)
+            const localInv = localStorage.getItem('gadgeta_inventory');
+            const localSales = localStorage.getItem('gadgeta_sales');
+            
+            if (localInv) inventoryData = JSON.parse(localInv);
+            if (localSales) salesData = JSON.parse(localSales);
+
             if(!SCRIPT_URL) {
-                // Beri data dummy jika offline
-                inventoryData = [{ id: 1, brand: 'Apple', model: 'iPhone 15', color: 'Black', price: 15000000, imei: '123456789012345' }];
-                salesData = [];
                 updateAllViews();
-                showNotification('Berjalan dalam Mode Offline.', true);
+                showNotification('Mode Offline: Data tersimpan aman di perangkat Anda.');
                 return;
             }
 
@@ -554,11 +564,18 @@
             try {
                 const response = await fetchWithTimeout(`${SCRIPT_URL}?action=getData`, {}, 20000);
                 const data = await response.json();
+                
+                // Gunakan data dari Google Sheets jika berhasil terhubung
                 inventoryData = data.inventory || [];
                 salesData = data.sales || [];
+                
+                // Sinkronkan kembali ke lokal
+                saveLocalData(); 
                 updateAllViews();
+                showNotification('Data tersinkronisasi dengan cloud.');
             } catch (error) {
-                showNotification('Gagal terhubung ke database. Periksa sinyal internet HP Anda.', true);
+                updateAllViews();
+                showNotification('Gagal terhubung ke cloud. Menggunakan data lokal di HP.', true);
             } finally {
                 isNetworkBusy = false;
             }
@@ -706,7 +723,11 @@
                 newItems.push(newItem);
             });
             
+            // Simpan ke memori lokal
+            saveLocalData();
             updateAllViews(); 
+            
+            // Kirim ke cloud
             const isSuccess = await sendDataToSheet('addInventory', newItems);
             
             isNetworkBusy = false;
@@ -721,6 +742,9 @@
             if(confirm('Yakin menghapus unit IMEI ini?')) {
                 const itemToDelete = inventoryData.find(i => i.id == id);
                 inventoryData = inventoryData.filter(i => i.id != id);
+                
+                // Simpan perubahan ke memori lokal
+                saveLocalData();
                 updateAllViews();
                 
                 isNetworkBusy = true;
@@ -728,8 +752,8 @@
                 isNetworkBusy = false;
 
                 if(!isSuccess && SCRIPT_URL) {
-                    inventoryData.push(itemToDelete);
-                    updateAllViews();
+                    // Jika gagal dan kita menggunakan cloud, opsi untuk kembalikan data
+                    // inventoryData.push(itemToDelete); saveLocalData(); updateAllViews();
                 } else {
                     showNotification('Data dihapus.');
                 }
@@ -884,6 +908,9 @@
 
             salesData.push(newSale);
             inventoryData.splice(itemIndex, 1);
+            
+            // Simpan perubahan ke lokal storage seketika
+            saveLocalData();
             updateAllViews();
 
             const saleSuccess = await sendDataToSheet('addSale', newSale);
