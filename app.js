@@ -1,6 +1,6 @@
 // --- KONFIGURASI DATABASE (GOOGLE SHEETS) ---
 // GANTI STRING DI BAWAH DENGAN URL WEB APP DARI GOOGLE APPS SCRIPT ANDA!
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyT5hboSgT1AuHvTBUfKtmkj4efdVXdNvpjEVSETvh0hQcR2t_RfCIySUKSw4TB7e8/exec'; 
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyDJ0POvXFAXYtxNzQfWn4zHcR0kFpRCyIT2b4fmaoY69BW00GrJZrdTgkMTi9JC3KH/exec'; 
 
 // --- DATA STATE (LOKAL) ---
 let inventoryData = [];
@@ -10,7 +10,7 @@ let isInventoryFormOpen = false;
 
 // --- INITIALIZE & FETCH DATA ---
 async function fetchInitialData() {
-    if(!SCRIPT_URL || SCRIPT_URL === 'https://script.google.com/macros/s/AKfycbyT5hboSgT1AuHvTBUfKtmkj4efdVXdNvpjEVSETvh0hQcR2t_RfCIySUKSw4TB7e8/exec') {
+    if(!SCRIPT_URL || SCRIPT_URL === 'https://script.google.com/macros/s/AKfycbyDJ0POvXFAXYtxNzQfWn4zHcR0kFpRCyIT2b4fmaoY69BW00GrJZrdTgkMTi9JC3KH/exec') {
         showNotification('URL Database belum diatur!', true);
         return;
     }
