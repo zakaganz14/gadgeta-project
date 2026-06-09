@@ -25,3 +25,33 @@
     opacity: 1;
     visibility: visible;
 }
+/* ... existing code ... */
+#toast.show {
+    transform: translateY(0);
+    opacity: 1;
+    visibility: visible;
+}
+
+/* --- TAMBAHAN UNTUK TAMPILAN MOBILE --- */
+/* Memberikan ruang di bawah agar konten tidak tertutup navigasi bawah HP */
+@media (max-width: 768px) {
+    .mobile-pb {
+        padding-bottom: 5rem !important; /* Ruang untuk bottom nav */
+    }
+}
+
+/* Mengamankan area bawah untuk iPhone modern (Notch/Home Indicator) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+/* Sembunyikan scrollbar tapi tetap bisa di-scroll (Tampilan lebih bersih) */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
